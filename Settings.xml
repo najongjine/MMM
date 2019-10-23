@@ -1,0 +1,170 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Settings>
+    <Language>en</Language>
+    <Theme>Visual Studio 2013 Light Skin</Theme>
+    <X>473</X>
+    <Y>130</Y>
+    <Width>1024</Width>
+    <Height>768</Height>
+    <CommandBarHeight>206</CommandBarHeight>
+    <WindowState>Normal</WindowState>
+    <Volume>80</Volume>
+    <RibbonMenu>True</RibbonMenu>
+    <SplitterWidth>70</SplitterWidth>
+    <QuickAccessBelowRibbon>Default</QuickAccessBelowRibbon>
+    <FrameTimeLine>True</FrameTimeLine>
+    <ZoomTimeline>12</ZoomTimeline>
+    <ShowInfo>True</ShowInfo>
+    <ShowBoneMarker>False</ShowBoneMarker>
+    <ShowPoseHandle>False</ShowPoseHandle>
+    <ShowCaption>True</ShowCaption>
+    <ShowOnlyExpandedBone>False</ShowOnlyExpandedBone>
+    <ShowCamera>False</ShowCamera>
+    <ShowCameraLocus>False</ShowCameraLocus>
+    <FloatingView>False</FloatingView>
+    <Physics>0</Physics>
+    <PhysicsSeed>0</PhysicsSeed>
+    <ShowPhysicsBoneMarker>False</ShowPhysicsBoneMarker>
+    <PhysicsGround>True</PhysicsGround>
+    <SoftBodyPhysics>False</SoftBodyPhysics>
+    <WireFrame>0</WireFrame>
+    <AntiArias>1</AntiArias>
+    <GroundShadow>1</GroundShadow>
+    <GroundShadowDeep>1</GroundShadowDeep>
+    <MipMap>False</MipMap>
+    <Anisotropic>False</Anisotropic>
+    <DefaultBackgroundColor>-1</DefaultBackgroundColor>
+    <EnableEffect>10</EnableEffect>
+    <EffectCache>True</EffectCache>
+    <EffectCacheSize>10</EffectCacheSize>
+    <Skinning>CPU</Skinning>
+    <AudioWavePanel>0</AudioWavePanel>
+    <InteropSequencePanel>0</InteropSequencePanel>
+    <Locus>0</Locus>
+    <LocusPointSize>0</LocusPointSize>
+    <SoundWhenMoving>0</SoundWhenMoving>
+    <DefaultInterpol>
+        <PointA_X>20</PointA_X>
+        <PointA_Y>20</PointA_Y>
+        <PointB_X>107</PointB_X>
+        <PointB_Y>107</PointB_Y>
+    </DefaultInterpol>
+    <InterpolPalette>
+        <Index>0</Index>
+        <PointA_X>64</PointA_X>
+        <PointA_Y>0</PointA_Y>
+        <PointB_X>64</PointB_X>
+        <PointB_Y>127</PointB_Y>
+    </InterpolPalette>
+    <InterpolPalette>
+        <Index>1</Index>
+        <PointA_X>48</PointA_X>
+        <PointA_Y>5</PointA_Y>
+        <PointB_X>80</PointB_X>
+        <PointB_Y>122</PointB_Y>
+    </InterpolPalette>
+    <InterpolPalette>
+        <Index>2</Index>
+        <PointA_X>32</PointA_X>
+        <PointA_Y>10</PointA_Y>
+        <PointB_X>96</PointB_X>
+        <PointB_Y>117</PointB_Y>
+    </InterpolPalette>
+    <InterpolPalette>
+        <Index>3</Index>
+        <PointA_X>96</PointA_X>
+        <PointA_Y>0</PointA_Y>
+        <PointB_X>32</PointB_X>
+        <PointB_Y>127</PointB_Y>
+    </InterpolPalette>
+    <InterpolPalette>
+        <Index>4</Index>
+        <PointA_X>0</PointA_X>
+        <PointA_Y>64</PointA_Y>
+        <PointB_X>64</PointB_X>
+        <PointB_Y>127</PointB_Y>
+    </InterpolPalette>
+    <InterpolPalette>
+        <Index>5</Index>
+        <PointA_X>64</PointA_X>
+        <PointA_Y>0</PointA_Y>
+        <PointB_X>127</PointB_X>
+        <PointB_Y>64</PointB_Y>
+    </InterpolPalette>
+    <KeyFramePerSec>30</KeyFramePerSec>
+    <LocusFrameCount>30</LocusFrameCount>
+    <ScreenFPS>60</ScreenFPS>
+    <NearPlane>1</NearPlane>
+    <FarPlane>100000</FarPlane>
+    <OutputWidth>320</OutputWidth>
+    <OutputHeight>240</OutputHeight>
+    <SelfShadowSize>1024</SelfShadowSize>
+    <AxisControlPosition>BottomRight</AxisControlPosition>
+    <AxisControlSpeed>1</AxisControlSpeed>
+    <BoneHandleType>Normal</BoneHandleType>
+    <OutputMotionFileType>MVD</OutputMotionFileType>
+    <DeselectEmptyClick>True</DeselectEmptyClick>
+    <AutoBackup>True</AutoBackup>
+    <AutoBackupPerMin>15</AutoBackupPerMin>
+    <AutoBackupCount>3</AutoBackupCount>
+    <AbsolutePath>True</AbsolutePath>
+    <RecentProjectFolders>
+        <Folder>C:\MikuMikuMoving2_v0101</Folder>
+    </RecentProjectFolders>
+    <RegistedProjectFolders />
+    <RecentModelFolders>
+        <Folder>C:\MikuMikuMoving2_v0101\Model</Folder>
+    </RecentModelFolders>
+    <RecentAccessoryFolders />
+    <RecentMediaFolders />
+    <RecentVpdFolders />
+    <RecentVsqFolders />
+    <RecentVmdFolders />
+    <RecentAudioFolders />
+    <RecentBackImageFolders />
+    <RecentBackMovieFolders />
+    <RecentEffectFolders />
+    <RecentExportFolders />
+    <KeyAssigns>
+        <SelectAll>A Control</SelectAll>
+        <SelectAllBones>A Shift</SelectAllBones>
+        <Copy>C Control</Copy>
+        <Cut>X Control</Cut>
+        <Paste>V Control</Paste>
+        <ReversePaste>W Control</ReversePaste>
+        <DelKeyFrame>Delete None</DelKeyFrame>
+        <InitPose>E None</InitPose>
+        <SelectUnregisted>S None</SelectUnregisted>
+        <ReversePose>W None</ReversePose>
+        <RegistKeyframe>Return None</RegistKeyframe>
+        <Save>S Control</Save>
+        <Undo>Z Control</Undo>
+        <Redo>Y Control</Redo>
+        <BoneMarker>C None</BoneMarker>
+        <CenterBias>D None</CenterBias>
+        <GlobalLocal>G None</GlobalLocal>
+        <Translucence>V None</Translucence>
+        <PoseHandle>X None</PoseHandle>
+        <InsertColumn>I None</InsertColumn>
+        <DelColumn>K None</DelColumn>
+        <CameraEnable>Z None</CameraEnable>
+        <ZeroFrame>Home None</ZeroFrame>
+        <SelectProjProp>End None</SelectProjProp>
+        <NextBookmark>OemPeriod Control</NextBookmark>
+        <PrevBookmark>Oemcomma Control</PrevBookmark>
+        <RegistBookmark>M Control</RegistBookmark>
+        <Play>P None</Play>
+        <RightSideView>F1 None</RightSideView>
+        <LeftSideView>F1 Shift</LeftSideView>
+        <TopView>F2 None</TopView>
+        <BottomView>F2 Shift</BottomView>
+        <FrontalView>F3 None</FrontalView>
+        <RearView>F3 Shift</RearView>
+        <XRote>OemPeriod None</XRote>
+        <YRote>OemQuestion None</YRote>
+        <ZRote>OemBackslash None</ZRote>
+        <XMove>Oemplus None</XMove>
+        <YMove>Oem1 None</YMove>
+        <ZMove>Oem6 None</ZMove>
+    </KeyAssigns>
+</Settings>

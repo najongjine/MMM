@@ -1,0 +1,193 @@
+<Effect/>
+<Type>Object</Type>
+<Name>TessellationWave</Name>
+<Description>MMMv2 TessellationWave</Description>
+<Code>
+
+// 座標変換行列
+float4x4 WorldMatrix    : WORLD;
+float4x4 ViewMatrix     : VIEW;
+float4x4 ViewProjMatrix : VIEWPROJECTION;
+
+//ライト方向
+float3 LightDirection	: DIRECTION < string Object = "Light"; >;
+
+//時間
+float Time : TIME <bool SyncInEditMode=false;>;
+
+//テッセレーションファクタ
+float TessellationFactor	:TESSELLATIONFACTOR;
+//波テクスチャサンプル幅
+static const float step = 1.0 / 1024;
+
+//波テクスチャ
+Texture2D HeightMap <string ResourceName = "wavemap.jpg";>;
+SamplerState MapSampler
+{
+    Filter = MIN_MAG_LINEAR_MIP_POINT;
+    AddressU = CLAMP;
+    AddressV = CLAMP;
+};
+
+//各シェーダのINPUT,OUTPUT
+struct VS_INPUT {
+	float4 Pos	: POSITION;
+	float2 Tex	: TEXCOORD0;
+};
+struct VS_OUTPUT_HS_INPUT
+{
+	float3 WorldPos	: WORLDPOS;
+	float2 Tex	: TEXCOORD0;
+	float  Factor	: TESSFACTOR;
+};
+struct HS_CONSTANT_DATA_OUTPUT
+{
+	float tessFactor[3]	: SV_TessFactor;
+	float insideFactor	: SV_InsideTessFactor;
+	float3 divide		: COLOR0;
+};
+struct HS_CONTROL_POINT_OUTPUT
+{
+	float3 WorldPos	: WORLDPOS;
+	float2 Tex	: TEXCOORD0;
+};
+struct DS_OUTPUT
+{
+	float4 Pos		: SV_POSITION;
+	float3 Normal	: NORMAL;
+	float2 Tex		: TEXCOORD0;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// 頂点シェーダ
+////////////////////////////////////////////////////////////////////////////////////////////////
+VS_OUTPUT_HS_INPUT VS(VS_INPUT IN)
+{
+	VS_OUTPUT_HS_INPUT Out = (VS_OUTPUT_HS_INPUT)0;
+	
+	//World座標
+	Out.WorldPos = mul(IN.Pos, WorldMatrix);
+	//UV座標
+	Out.Tex = IN.Tex * 2.0f;
+	
+	//テッセレーションファクター(ここでは分かりやすいようにZ値でレベルを決める)
+	float viewpos = mul(float4(Out.WorldPos.xyz, 1), ViewProjMatrix).z;
+	viewpos = pow(viewpos / 1000, 1);
+	Out.Factor = max(1 - viewpos, 0.1);
+	
+	return Out;
+}
+
+
+///////////////////////////////////////////////////////////////////////
+// Hullシェーダ実処理部分
+///////////////////////////////////////////////////////////////////////
+HS_CONSTANT_DATA_OUTPUT ConstantsHS(InputPatch<VS_OUTPUT_HS_INPUT, 3> p, uint PatchID : SV_PrimitiveID)
+{
+	HS_CONSTANT_DATA_OUTPUT output = (HS_CONSTANT_DATA_OUTPUT)0;
+	
+	float3 factors;
+	factors.x = pow(((TessellationFactor + 1.0f) * p[0].Factor) * 3.0f, 2);
+	factors.y = pow(((TessellationFactor + 1.0f) * p[1].Factor) * 3.0f, 2);
+	factors.z = pow(((TessellationFactor + 1.0f) * p[2].Factor) * 3.0f, 2);
+	
+	output.tessFactor[0] = 0.5 * (factors.y + factors.z);
+	output.tessFactor[1] = 0.5 * (factors.x + factors.z);
+	output.tessFactor[2] = 0.5 * (factors.x + factors.y);
+	output.insideFactor = (output.tessFactor[0] + output.tessFactor[1] + output.tessFactor[2]) / 6.0f;
+	
+	//
+	output.divide = min(float3(output.tessFactor[0], output.tessFactor[1], output.tessFactor[2]), 10);
+	
+	return output;
+}
+
+///////////////////////////////////////////////////////////////////////
+// Hullシェーダ
+///////////////////////////////////////////////////////////////////////
+[domain("tri")]
+[partitioning("fractional_even")]
+[outputtopology("triangle_cw")]
+[outputcontrolpoints(3)]
+[patchconstantfunc("ConstantsHS")]
+[maxtessfactor(10.0)]
+HS_CONTROL_POINT_OUTPUT HS(InputPatch<VS_OUTPUT_HS_INPUT, 3> inputPatch, uint uCPID : SV_OutputControlPointID)
+{
+	HS_CONTROL_POINT_OUTPUT output = (HS_CONTROL_POINT_OUTPUT)0;
+
+	//テッセレータに値を渡す
+	output.WorldPos = inputPatch[uCPID].WorldPos;
+	output.Tex = inputPatch[uCPID].Tex;
+
+	return output;
+}
+//Domainシェーダ
+[domain("tri")]
+DS_OUTPUT DS(HS_CONSTANT_DATA_OUTPUT input, float3 BarycentricCoordinates : SV_DomainLocation,
+	const OutputPatch<HS_CONTROL_POINT_OUTPUT, 3> TrianglePatch)
+{
+	DS_OUTPUT Out = (DS_OUTPUT)0;
+	
+	//座標　
+	float3 WorldPos = BarycentricCoordinates.x * TrianglePatch[0].WorldPos +
+		BarycentricCoordinates.y * TrianglePatch[1].WorldPos +
+		BarycentricCoordinates.z * TrianglePatch[2].WorldPos;
+	
+	//UV座標
+	Out.Tex = BarycentricCoordinates.x * TrianglePatch[0].Tex +
+		BarycentricCoordinates.y * TrianglePatch[1].Tex +
+		BarycentricCoordinates.z * TrianglePatch[2].Tex;
+	
+	float sx = 0.04 / input.divide.x;
+	float sy = 0.04 / input.divide.y;
+	float sz = 0.04 / input.divide.z;
+	
+	//時刻によってUV座標を動かす
+	float2 uvx = float2(Out.Tex.x * 2 + Time / 40.0f, Out.Tex.y);
+	float2 uvz = float2(Out.Tex.x, Out.Tex.y + Time / 30.0f);
+	float2 uvy = Out.Tex * 0.5f;
+
+	float tx = sin(Time) * 1.4 + 2.3;
+	float tz = sin(Time * 1.3) * 1.3 + 1.7;
+	float ty = sin(Time * 2);
+	
+	//テクスチャによって高さを決める。ここでは3つの要素を時間軸をずらしながらテキトーに合成している。
+	float hx = HeightMap.SampleLevel(MapSampler, uvx, 0).x;
+	float hz = HeightMap.SampleLevel(MapSampler, uvz, 0).x;
+	float hy = HeightMap.SampleLevel(MapSampler, uvy, 0).x;
+	
+	float height = hx * tx + hz * tz + hy * ty;
+	WorldPos.y += height;
+	
+	float nx = HeightMap.SampleLevel(MapSampler, uvx - float2(sx, 0), 0).x - HeightMap.SampleLevel(MapSampler, uvx + float2(sx, 0), 0).x ;
+	float nz = HeightMap.SampleLevel(MapSampler, uvz - float2(0, sz), 0).x - HeightMap.SampleLevel(MapSampler, uvz + float2(0, sz), 0).x;
+	
+	//位置
+	Out.Pos = mul(float4(WorldPos, 1.0), ViewProjMatrix);
+	
+	//法線計算。高さから求める。
+	Out.Normal = normalize(float3(nx * tx, 1, nz * tz));
+	
+	return Out;
+}
+
+// ピクセルシェーダ
+float4 PS(DS_OUTPUT IN) : SV_Target
+{
+	//フラットシェーダ
+	float color = max(0,dot(IN.Normal, -LightDirection));
+	return float4(0.5f * color, 0.5f * color, 1.0f * color, 1.0f);
+}
+
+technique10 _name < string MMDPass = "object"; > {
+	pass P0 {
+		SetVertexShader(CompileShader(vs_5_0, VS()));
+		SetHullShader(CompileShader(hs_5_0 , HS()));
+		SetDomainShader(CompileShader(ds_5_0, DS()));
+		SetGeometryShader(NULL);
+		SetPixelShader(CompileShader(ps_5_0, PS()));
+	}
+}
+
+
+</Code>

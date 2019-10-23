@@ -1,0 +1,46 @@
+<Effect/>
+<Type>PixelShader</Type>
+<Name>SampleDefault</Name>
+<Description>AutoLuminousオフスクリーン用</Description>
+<DrawEdge>false</DrawEdge>
+<DrawShadow>false</DrawShadow>
+<Declare>
+
+// サンプラ(ShaderModel5では共通のサンプラでOK)
+SamplerState DefaultSampler;
+// オブジェクトのテクスチャ
+Texture2D ObjectTexture			: MATERIALTEXTURE;
+
+// 発光フラグ
+#define SPECULAR_BASE 100
+static bool IsEmittion = (SPECULAR_BASE < S_SpecularPower) && (length(S_MaterialSpecular) < 0.01);
+// 発光強度
+static float EmittionPower = IsEmittion ? ((S_SpecularPower - SPECULAR_BASE) / 12.0) : 1;
+
+</Declare>
+<VertexColor>
+
+    S_VSInput.Color = S_MaterialDiffuse;
+    S_VSInput.Color.rgb = S_VSInput.Color.rgb + S_MaterialEmissive / 2;
+    S_VSInput.Color.rgb = IsEmittion ? S_VSInput.Color.rgb : float3(0,0,0);
+	S_VSInput.Color.a = 1;
+
+</VertexColor>
+<Code>
+  
+	// 特別なローカル変数 float4 Color に、結果を入れるように定義する。
+	// セルフシャドウ処理はここでは定義しない。
+
+	float4 texColor = float4(1,1,1,1);
+
+	if (S_useTexture)
+	{
+		// テクスチャ
+		texColor = ObjectTexture.Sample(DefaultSampler, S_PSInput.Tex);
+		texColor.rgb = (texColor.rgb * S_MultipleTextureColor.rgb + S_AddingTextureColor.rgb) * texColor.a + (1.0 - texColor.a);
+	}
+	Color = S_PSInput.Color;
+	Color.rgb *= texColor.rgb * EmittionPower;
+	Color.a = texColor.a;
+
+</Code>

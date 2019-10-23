@@ -1,0 +1,359 @@
+<Effect/>
+<Type>Scene</Type>
+<Name>AutoLuminous</Name>
+<Author></Author>
+<Version></Version>
+<Description></Description>
+<CommandDeclare>
+
+	//サンプル数
+	const int SampleNum = 4;
+	//ガウス重み
+	float[] weight = new float[SampleNum];
+	//分散
+	float dispersion = 1.0f;
+
+</CommandDeclare>
+<CommandInitialize></CommandInitialize>
+<RenderCommands>
+
+	float sum;
+	
+	weight[0] = (float)Math.Exp(0);
+	sum = weight[0];
+	for (int i = 0; i < SampleNum; i++)
+	{
+		weight[i] = (float)Math.Exp(-0.5 * i * i / dispersion);
+		sum += 2 * weight[i];	//2回使うので2倍
+	}
+	//正規化
+	for (int i = 0; i < SampleNum; i++)
+		weight[i] /= sum;
+	//値をシェーダに渡す
+	Context.SetEffectValue("weight", weight);
+	
+	//元のシーンをScnMapに描画する
+	Context.SetRenderTarget("MultisampledDepthBuffer", "SceneMap");
+	Context.ClearColor(0, 0, 0, 0);
+	Context.ClearDepth(1.0f);
+	Context.DrawScene();
+
+	//シーンの高輝度部分を描画する
+	Context.SetRenderTarget("DepthBuffer", "HighlightMap");
+	Context.ClearColor(0, 0, 0, 0);
+	Context.ClearDepth(1.0f);
+	Context.DrawPass("HighlightPass");
+
+	//ガウスフィルタX
+	Context.SetRenderTarget("DepthBuffer", "BlurMapX1");
+	Context.ClearColor(0, 0, 0, 0);
+	Context.ClearDepth(1.0f);
+	Context.DrawPass("GaussianXPass1");
+	//ガウスフィルタY
+	Context.SetRenderTarget("DepthBuffer", "BlurMapY1");
+	Context.ClearColor(0, 0, 0, 0);
+	Context.ClearDepth(1.0f);
+	Context.DrawPass("GaussianYPass1");
+	//ガウスフィルタX
+	Context.SetRenderTarget("DepthBuffer", "BlurMapX2");
+	Context.ClearColor(0, 0, 0, 0);
+	Context.ClearDepth(1.0f);
+	Context.DrawPass("GaussianXPass2");
+	//ガウスフィルタY
+	Context.SetRenderTarget("DepthBuffer", "BlurMapY2");
+	Context.ClearColor(0, 0, 0, 0);
+	Context.ClearDepth(1.0f);
+	Context.DrawPass("GaussianYPass2");
+	//ガウスフィルタX
+	Context.SetRenderTarget("DepthBuffer", "BlurMapX3");
+	Context.ClearColor(0, 0, 0, 0);
+	Context.ClearDepth(1.0f);
+	Context.DrawPass("GaussianXPass3");
+	//ガウスフィルタY
+	Context.SetRenderTarget("DepthBuffer", "BlurMapY3");
+	Context.ClearColor(0, 0, 0, 0);
+	Context.ClearDepth(1.0f);
+	Context.DrawPass("GaussianYPass3");
+
+	//合成する
+	Context.SetRenderTarget("", "");
+	Context.ClearColor(0, 0, 0, 0);
+	Context.ClearDepth(1.0f);
+	Context.DrawPass("BlendPass");
+	
+</RenderCommands>
+<Code>
+
+//元シーンの強度
+float ScenePower
+<
+	string UIName = "ScenePower";
+	string UIWidget = "Slider";
+	bool UIVisible =  true;
+	float UIMin = 0.00;
+	float UIMax = 5.00;
+> = 1.0;
+
+//発光強度
+float Power
+<
+	string UIName = "Power";
+	string UIWidget = "Slider";
+	bool UIVisible =  true;
+	float UIMin = 0.00;
+	float UIMax = 5.00;
+> = 2.0;
+
+//背景色
+float4 ClearColor
+<
+   string UIName = "ClearColor";
+   string UIWidget = "Color";
+   bool UIVisible =  true;
+> = float4(0,0,0,0);
+
+
+#define TEXSIZE1  0.5
+#define TEXSIZE2  0.25
+#define TEXSIZE3  0.125
+#define TEXSIZE4  0.0625
+#define TEXSIZE5  0.03125
+
+#define AL_TEXFORMAT "R16G16B16A16_Float"
+
+//ガウス重み
+#define GAUSSIAN_SAMPLE 4
+float weight[GAUSSIAN_SAMPLE];
+
+///////////////////////////////////////////////////////////////////////////////////////////////
+// 光放射オブジェクト描画先
+ 
+Texture2D AL_EmitterRT: OFFSCREENRENDERTARGET <
+    string Description = "EmitterDrawRenderTarget for AutoLuminous";
+    float2 ViewPortRatio = {TEXSIZE1,TEXSIZE1};
+    float4 ClearColor = { 0, 0, 0, 1 }; 
+    float ClearDepth = 1.0;
+    bool AntiAlias = true; 
+    int MipLevels = 1;
+    string Format = "B8G8R8A8_UNorm";
+    string DefaultEffect = 
+        "self = hide;"
+        "* = AL_Object.effsub;" 
+    ;
+>;
+ 
+
+///////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////
+
+// 深度バッファ
+Texture2D MultisampledDepthBuffer : RENDERDEPTHSTENCILTARGET <
+    float2 ViewPortRatio = {1.0,1.0};
+    string Format = "D24_UNorm_S8_UInt";
+    bool AntiAlias = true;
+>;
+Texture2D DepthBuffer : RENDERDEPTHSTENCILTARGET <
+    float2 ViewPortRatio = {TEXSIZE1,TEXSIZE1};
+    string Format = "D24_UNorm_S8_UInt";
+>;
+// オリジナルの描画結果を記録するためのレンダーターゲット
+Texture2D SceneMap : RENDERCOLORTARGET <
+    float2 ViewPortRatio = {1.0,1.0};
+    int MipLevels = 1;
+    bool AntiAlias = true;
+	string Format = AL_TEXFORMAT;
+>;
+// 高輝度部分を記録するためのレンダーターゲット
+Texture2D HighlightMap : RENDERCOLORTARGET <
+    float2 ViewPortRatio = {TEXSIZE1,TEXSIZE1};
+    int MipLevels = 1;
+	string Format = AL_TEXFORMAT;
+>;
+// X方向のぼかし結果を記録するためのレンダーターゲット(TEXSIZE1)
+texture2D BlurMapX1 : RENDERCOLORTARGET <
+    float2 ViewPortRatio = {TEXSIZE1,TEXSIZE1};
+    int MipLevels = 1;
+>;
+// Y方向のぼかし結果を記録するためのレンダーターゲット(TEXSIZE1)
+texture2D BlurMapY1 : RENDERCOLORTARGET <
+    float2 ViewPortRatio = {TEXSIZE1,TEXSIZE1};
+    int MipLevels = 1;
+>;
+// X方向のぼかし結果を記録するためのレンダーターゲット(TEXSIZE2)
+texture2D BlurMapX2 : RENDERCOLORTARGET <
+    float2 ViewPortRatio = {TEXSIZE2,TEXSIZE2};
+    int MipLevels = 1;
+>;
+// Y方向のぼかし結果を記録するためのレンダーターゲット(TEXSIZE2)
+texture2D BlurMapY2 : RENDERCOLORTARGET <
+    float2 ViewPortRatio = {TEXSIZE2,TEXSIZE2};
+    int MipLevels = 1;
+>;
+// X方向のぼかし結果を記録するためのレンダーターゲット(TEXSIZE3)
+texture2D BlurMapX3 : RENDERCOLORTARGET <
+    float2 ViewPortRatio = {TEXSIZE3,TEXSIZE3};
+    int MipLevels = 1;
+>;
+// Y方向のぼかし結果を記録するためのレンダーターゲット(TEXSIZE3)
+texture2D BlurMapY3 : RENDERCOLORTARGET <
+    float2 ViewPortRatio = {TEXSIZE3,TEXSIZE3};
+    int MipLevels = 1;
+>;
+//共通サンプラ
+SamplerState BaseSampler
+{
+    Filter = MIN_MAG_LINEAR_MIP_POINT;
+    AddressU = CLAMP;
+    AddressV = CLAMP;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// トーンカーブ関数
+// 
+float3 ToneCurve(float3 Color)
+{
+	//return 1.0 / (1.0 + exp(-1 * (Color * 8 - 7)));
+    float3 newcolor;
+    const float th = 0.65;
+    newcolor = normalize(Color.rgb) * (th + sqrt(max(0, (length(Color.rgb) - th) / 2)));
+    newcolor.r = (Color.r > 0) ? newcolor.r : Color.r;
+    newcolor.g = (Color.g > 0) ? newcolor.g : Color.g;
+    newcolor.b = (Color.b > 0) ? newcolor.b : Color.b;
+    
+    Color.rgb = min(Color.rgb, newcolor);
+    
+    return Color.rgb;
+}
+////////////////////////////////////////////////////////////////////////////////////////////////
+// 共通頂点シェーダ
+struct VS_OUTPUT {
+    float4 Pos            : SV_POSITION;
+    float2 Tex            : TEXCOORD0;
+};
+
+VS_OUTPUT VS( float4 Pos : POSITION, float4 Tex : TEXCOORD0 )
+{
+    VS_OUTPUT Out = (VS_OUTPUT)0; 
+    
+    Out.Pos = Pos;
+    Out.Tex = Tex;
+    
+    return Out;
+}
+////////////////////////////////////////////////////////////////////////////////////////////////
+//高輝度成分の抽出
+
+float4 PS_Highlight(VS_OUTPUT PSInput) : SV_Target
+{
+    float4 Color;
+	float4 SceneColor;
+    
+	//AL対象を描画したOffscreen
+    Color = AL_EmitterRT.Sample(BaseSampler, PSInput.Tex);
+    
+    //元スクリーンの高輝度成分の抽出
+    SceneColor = SceneMap.Sample(BaseSampler, PSInput.Tex);
+	SceneColor.rgb = max(0, SceneColor.rgb * ScenePower - 0.98);
+	Color.rgb = ToneCurve(Color.rgb + SceneColor.rgb) * Power;
+	
+    return Color;
+}
+////////////////////////////////////////////////////////////////////////////////////////////////
+// ガウスフィルタ
+
+float4 PS_Gaussian( VS_OUTPUT PSInput, uniform bool isX, uniform Texture2D Source, uniform int miplevel) : SV_Target
+{
+	//テクスチャサイズの取得
+	float2 texsize;
+	float  lv;
+	Source.GetDimensions(miplevel, texsize.x, texsize.y, lv);
+	
+	//サンプリング幅
+	float2 step;
+	if (isX)
+		step = float2(0.5 / texsize.x, 0);
+	else
+		step = float2(0, 0.5 / texsize.y);
+	
+	//色
+	float4 Color = weight[0] * Source.SampleLevel(BaseSampler, PSInput.Tex, lv);
+	
+	//サンプルする
+	
+    [unroll]
+	for (int i = 1; i < GAUSSIAN_SAMPLE; i++)
+		Color += weight[i] * (Source.SampleLevel(BaseSampler, min(PSInput.Tex + step * i, 0.99), lv) + Source.SampleLevel(BaseSampler, max(PSInput.Tex - step * i, 0.01), lv));
+	
+    return Color * Power;
+}
+////////////////////////////////////////////////////////////////////////////////////////////////
+// 合成
+
+float4 PS_Blend(VS_OUTPUT PSInput) : SV_Target
+{   
+    float4 Color;
+
+	
+	Color = SceneMap.Sample(BaseSampler, PSInput.Tex);
+	Color += HighlightMap.Sample(BaseSampler, PSInput.Tex);
+	Color += BlurMapY1.Sample(BaseSampler, PSInput.Tex);
+	Color += BlurMapY2.Sample(BaseSampler, PSInput.Tex);
+	Color += BlurMapY3.Sample(BaseSampler, PSInput.Tex);
+	
+	//return AL_EmitterRT.Sample(BaseSampler, PSInput.Tex);
+	return Color;
+}
+
+BlendState Diffusion_BlendState
+{
+    BlendEnable[0] = FALSE;
+};
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+technique10 AutoLuminous
+{
+    pass HighlightPass {
+        SetBlendState(Diffusion_BlendState, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetVertexShader(CompileShader(vs_4_0, VS()));
+        SetPixelShader(CompileShader(ps_4_0, PS_Highlight()));
+    }
+    pass GaussianXPass1 {
+        SetBlendState(Diffusion_BlendState, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetVertexShader(CompileShader(vs_4_0, VS()));
+        SetPixelShader(CompileShader(ps_4_0, PS_Gaussian(true, HighlightMap, 1)));
+    }
+    pass GaussianYPass1 {
+        SetBlendState(Diffusion_BlendState, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetVertexShader(CompileShader(vs_4_0, VS()));
+        SetPixelShader(CompileShader(ps_4_0, PS_Gaussian(false, BlurMapX1, 1)));
+    }
+    pass GaussianXPass2 {
+        SetBlendState(Diffusion_BlendState, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetVertexShader(CompileShader(vs_4_0, VS()));
+        SetPixelShader(CompileShader(ps_4_0, PS_Gaussian(true, BlurMapY1, 3)));
+    }
+    pass GaussianYPass2 {
+        SetBlendState(Diffusion_BlendState, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetVertexShader(CompileShader(vs_4_0, VS()));
+        SetPixelShader(CompileShader(ps_4_0, PS_Gaussian(false, BlurMapX2, 3)));
+    }
+    pass GaussianXPass3 {
+        SetBlendState(Diffusion_BlendState, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetVertexShader(CompileShader(vs_4_0, VS()));
+        SetPixelShader(CompileShader(ps_4_0, PS_Gaussian(true, BlurMapY2, 4)));
+    }
+    pass GaussianYPass3 {
+        SetBlendState(Diffusion_BlendState, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetVertexShader(CompileShader(vs_4_0, VS()));
+        SetPixelShader(CompileShader(ps_4_0, PS_Gaussian(false, BlurMapX3, 4)));
+    }
+    pass BlendPass {
+        SetBlendState(Diffusion_BlendState, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetVertexShader(CompileShader(vs_4_0, VS()));
+        SetPixelShader(CompileShader(ps_4_0, PS_Blend()));
+    }
+}
+
+</Code>

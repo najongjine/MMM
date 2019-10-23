@@ -1,0 +1,31 @@
+<Effect/>
+<Type>PixelShader</Type>
+<Name>DepthShader</Name>
+<Description>Croquisオフスクリーン用</Description>
+<DrawEdge>false</DrawEdge>
+<DrawShadow>false</DrawShadow>
+<Declare>
+
+#define ALPHACLIP 0.5
+
+// サンプラ(ShaderModel5では共通のサンプラでOK)
+SamplerState BaseSampler;
+// オブジェクトのテクスチャ
+Texture2D ObjectTexture			: MATERIALTEXTURE;
+
+</Declare>
+<Code>
+
+	float alpha = 1;
+
+	if (S_useTexture)
+	{
+		// テクスチャ
+		alpha = ObjectTexture.Sample(BaseSampler, S_PSInput.Tex).a;
+	}
+	clip(S_MaterialDiffuse.a * alpha - ALPHACLIP);
+	
+	float3 normal = normalize(S_PSInput.Normal) * 0.5 + 0.5; // 0-1の範囲に収める
+	return float4(normal, 1);
+
+</Code>

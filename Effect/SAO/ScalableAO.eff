@@ -1,0 +1,490 @@
+<Effect/>
+<Type>Scene</Type>
+<Name>AlchemyAO</Name>
+<Description>MMMv2 AlchemyAO</Description>
+<CommandDeclare>
+
+	//サンプル数
+	const int SampleNum = 4;
+	//ガウス重み
+	float[] weight = new float[SampleNum];
+	//分散
+	float dispersion = 1.0f;
+
+</CommandDeclare>
+<RenderCommands>
+
+	float sum;
+	
+	weight[0] = (float)(Math.Exp(0));
+	sum = weight[0];
+	for (int i = 1; i < SampleNum; i++)
+	{
+		weight[i] = (float)(Math.Exp(-0.5 * i * i / dispersion));
+		sum += 2 * weight[i];	//2回使うので2倍
+	}
+	//正規化
+	for (int i = 0; i < SampleNum; i++)
+		weight[i] /= sum;
+	//値をシェーダに渡す
+	Context.SetEffectValue("weight", weight);
+	
+	//元のシーンをScnMapに描画する
+	Context.SetRenderTarget("DepthBuffer", "SceneMap");
+	Context.ClearColor(0, 0, 0, 0);
+	Context.ClearDepth(1.0f);
+	Context.DrawScene();
+
+	//AOを描画する
+	Context.SetRenderTarget("AOBuffer", "AOMap");
+	Context.ClearColor(0, 0, 0, 0);
+	Context.ClearDepth(1.0f);
+	Context.DrawPass("AOPass");
+
+	//ガウスフィルタX
+	Context.SetRenderTarget("BlurDepthBuffer", "BlurMapX1");
+	Context.ClearColor(0, 0, 0, 0);
+	Context.ClearDepth(1.0f);
+	Context.DrawPass("GaussianXPass1");
+	//ガウスフィルタY
+	Context.SetRenderTarget("BlurDepthBuffer", "BlurMapY1");
+	Context.ClearColor(0, 0, 0, 0);
+	Context.ClearDepth(1.0f);
+	Context.DrawPass("GaussianYPass1");
+	//ガウスフィルタX
+	Context.SetRenderTarget("AOBuffer", "BlurMapX2");
+	Context.ClearColor(0, 0, 0, 0);
+	Context.ClearDepth(1.0f);
+	Context.DrawPass("GaussianXPass2");
+	//ガウスフィルタY
+	Context.SetRenderTarget("AOBuffer", "BlurMapY2");
+	Context.ClearColor(0, 0, 0, 0);
+	Context.ClearDepth(1.0f);
+	Context.DrawPass("GaussianYPass2");
+	//ガウスフィルタX
+	Context.SetRenderTarget("AOBuffer", "BlurMapX3");
+	Context.ClearColor(0, 0, 0, 0);
+	Context.ClearDepth(1.0f);
+	Context.DrawPass("GaussianXPass3");
+	//ガウスフィルタY
+	Context.SetRenderTarget("AOBuffer", "BlurMapY3");
+	Context.ClearColor(0, 0, 0, 0);
+	Context.ClearDepth(1.0f);
+	Context.DrawPass("GaussianYPass3");
+
+	//Gaussian_Yパス(合成含)をデフォルトのレンダーターゲットに描画する
+	Context.SetRenderTarget("", "");
+	Context.ClearColor(0, 0, 0, 0);
+	Context.ClearDepth(1.0f);
+	Context.DrawPass("BlendPass");
+	
+</RenderCommands>
+<Code>
+
+//ガウス重み
+#define GAUSSIAN_SAMPLE 4
+float weight[GAUSSIAN_SAMPLE];
+
+//1mの単位
+float projScale
+<
+   string UIName = "Scale";
+   string UIWidget = "Slider";
+   bool UIVisible =  true;
+   float UIMin = 1.0;
+   float UIMax = 1000.0;
+> = 500.0;
+
+//ディスク半径係数
+float radius
+<
+   string UIName = "Radius";
+   string UIWidget = "Slider";
+   bool UIVisible =  true;
+   float UIMin = 0.0;
+   float UIMax = 1.0;
+> = 0.5;
+
+//明度
+float intensity
+<
+   string UIName = "Intensity";
+   string UIWidget = "Slider";
+   bool UIVisible =  true;
+   float UIMin = 0.01;
+   float UIMax = 1.0;
+> = 0.4;
+
+//バイアス値
+float bias
+<
+   string UIName = "Bias";
+   string UIWidget = "Slider";
+   bool UIVisible =  true;
+   float UIMin = 0.001;
+   float UIMax = 0.1;
+> = 0.01;
+
+#define TEXSIZE1  0.5
+#define TEXSIZE2  0.25
+#define TEXSIZE3  0.125
+
+#define LOG_MAX_OFFSET 3
+#define MAX_MIP_LEVEL 5
+#define NUM_SAMPLES 11
+#define NUM_SPIRAL_TURNS 7
+
+// 法線･深度描画範囲の倍率(画面縁AO処理用)
+#define VIEWRATE  1.1
+
+//半径の二乗
+static float radius2 = radius * radius;
+
+//オフセット量
+float2 ViewportSize : VIEWPORTPIXELSIZE;
+static float2 WorkViewportSize = float2( floor(ViewportSize * VIEWRATE) );
+
+// 座標変換行列
+float4x4 ProjMatrix0 : PROJECTION;
+static float4x4 ProjMatrix = float4x4( ProjMatrix0[0] / VIEWRATE,
+                                       ProjMatrix0[1] / VIEWRATE,
+                                       ProjMatrix0[2],
+                                       ProjMatrix0[3] );
+
+// 視錐台の角へのベクトル
+float3 frustumCorner	: FRUSTUMCORNER;
+
+// 法線・深度マップ
+Texture2D NormalDepthMap_RT : OFFSCREENRENDERTARGET <
+	string Description = "NormalDepthMap";
+	string Format = "R32G32B32A32_FLOAT";
+	float2 ViewPortRatio = {1.0, 1.0};
+	float4 ClearColor = {0,0,0,1};
+	float ClearDepth = 1.0;
+	bool AntiAlias = false;
+	int Miplevels = 1;
+	string DefaultEffect =
+	    "self=hide;"
+	    "*=NormalDepthMap.effsub;";
+>;
+// Toon色マップ
+Texture2D ToonColorMap_RT : OFFSCREENRENDERTARGET <
+	string Description = "ToonMap";
+	string Format = "B8G8R8A8_UNorm";
+	float2 ViewPortRatio = {1.0, 1.0};
+	float4 ClearColor = {0,0,0,1};
+	float ClearDepth = 1.0;
+	bool AntiAlias = false;
+	int Miplevels = 1;
+	string DefaultEffect =
+	    "self=hide;"
+	    "*=ToonColorMap.effsub;";
+>;
+
+// 元のシーン保存用
+Texture2D SceneMap : RENDERCOLORTARGET <
+	string Format = "B8G8R8A8_UNorm";
+	float2 ViewPortRatio = {1.0,1.0};
+    int MipLevels = 1;
+	bool AntiAlias = true;
+>;
+Texture2D DepthBuffer : RENDERDEPTHSTENCILTARGET <
+	float2 ViewPortRatio = {1.0,1.0};
+	string Format = "D24_UNorm_S8_UInt";
+	bool AntiAlias = true;
+>;
+// AO描画用
+Texture2D AOMap : RENDERCOLORTARGET <
+	float2 ViewPortRatio = {1.0, 1.0};
+	string Format = "R16_FLOAT";
+	int Miplevels = 1;
+>;
+Texture2D AOBuffer : RENDERDEPTHSTENCILTARGET <
+	float2 ViewPortRatio = {1.0, 1.0};
+	string Format = "D24_UNorm_S8_UInt";
+>;
+// X方向のぼかし結果を記録するためのレンダーターゲット(TEXSIZE1)
+Texture2D BlurMapX1 : RENDERCOLORTARGET <
+    float2 ViewPortRatio = {TEXSIZE1,TEXSIZE1};
+    int MipLevels = 1;
+>;
+// Y方向のぼかし結果を記録するためのレンダーターゲット(TEXSIZE1)
+Texture2D BlurMapY1 : RENDERCOLORTARGET <
+    float2 ViewPortRatio = {TEXSIZE1,TEXSIZE1};
+    int MipLevels = 1;
+>;
+// X方向のぼかし結果を記録するためのレンダーターゲット(TEXSIZE2)
+Texture2D BlurMapX2 : RENDERCOLORTARGET <
+    float2 ViewPortRatio = {TEXSIZE2,TEXSIZE2};
+    int MipLevels = 1;
+>;
+// Y方向のぼかし結果を記録するためのレンダーターゲット(TEXSIZE2)
+Texture2D BlurMapY2 : RENDERCOLORTARGET <
+    float2 ViewPortRatio = {TEXSIZE2,TEXSIZE2};
+    int MipLevels = 1;
+>;
+// X方向のぼかし結果を記録するためのレンダーターゲット(TEXSIZE3)
+Texture2D BlurMapX3 : RENDERCOLORTARGET <
+    float2 ViewPortRatio = {TEXSIZE3,TEXSIZE3};
+    int MipLevels = 1;
+>;
+// Y方向のぼかし結果を記録するためのレンダーターゲット(TEXSIZE3)
+Texture2D BlurMapY3 : RENDERCOLORTARGET <
+    float2 ViewPortRatio = {TEXSIZE3,TEXSIZE3};
+    int MipLevels = 1;
+>;
+Texture2D BlurDepthBuffer : RENDERDEPTHSTENCILTARGET <
+    float2 ViewPortRatio = {TEXSIZE1,TEXSIZE1};
+    string Format = "D24_UNorm_S8_UInt";
+>;
+// 汎用サンプルステート
+SamplerState BaseSampler
+{
+    Filter = MIN_MAG_LINEAR_MIP_POINT;
+    AddressU = CLAMP;
+    AddressV = CLAMP;
+};
+
+
+////////////////////////////////////////////////////////////////////
+// 頂点シェーダ出力
+////////////////////////////////////////////////////////////////////
+struct VS_OUTPUT {
+    float4 Pos			: SV_POSITION;
+    float2 Tex			: TEXCOORD0;
+};
+////////////////////////////////////////////////////////////////////
+// 共通頂点シェーダ
+////////////////////////////////////////////////////////////////////
+VS_OUTPUT VS( float4 Pos : POSITION, float2 Tex : TEXCOORD0 )
+{
+    VS_OUTPUT Out = (VS_OUTPUT)0; 
+    
+    Out.Pos = Pos;
+    Out.Tex = Tex;
+    
+    return Out;
+}
+
+////////////////////////////////////////////////////////////////////
+// AOピクセルシェーダ
+////////////////////////////////////////////////////////////////////
+
+//--------------------------------------------------------------
+// UVをViewSpaceに変換する
+//--------------------------------------------------------------
+float2 UVtoViewSpace(float2 uv)
+{
+	return (uv - 0.5) * float2(2.0, -2.0);
+}
+//--------------------------------------------------------------
+//ViewSpaceの座標を取得する
+// ssC		:ScreenSpace座標(0.0-1.0)
+// normal	:法線(out)
+//--------------------------------------------------------------
+float3 getPosition(float2 ssC, out float3 normal)
+{
+	float4 nd = NormalDepthMap_RT.Sample(BaseSampler, ssC);
+	normal = normalize(nd.xyz);			//法線
+	float depth = nd.w;					//深度
+
+	float2 p = UVtoViewSpace(ssC);
+	return float3(p.x / ProjMatrix._11, p.y / ProjMatrix._22, 1.0f) * depth;
+	return normalize(float3(frustumCorner.x * p.x, frustumCorner.y * p.y, frustumCorner.z)) * depth;
+}
+//--------------------------------------------------------------
+//サンプラ位置を取得する
+// sampleNumber	:サンプル番号
+// spinAngle	:回転角度
+// ssR			:ScreenSpace半径(out)
+//--------------------------------------------------------------
+float2 tapLocation(int sampleNumber, float spinAngle, out float ssR){
+	// Radius relative to ssR
+	float alpha = float(sampleNumber + 0.5) / NUM_SAMPLES;
+	float angle = alpha * (NUM_SPIRAL_TURNS * 6.28) + spinAngle;
+
+	ssR = alpha;
+	return float2(cos(angle), sin(angle));
+}
+//--------------------------------------------------------------
+//オフセットを加えた位置を取得する
+// ssC			:ScreenSpace座標
+// unitOffset	:オフセット
+// ssR			:ScreenSpaceでの半径
+//--------------------------------------------------------------
+float3 getOffsetPosition(int2 ssC, float2 unitOffset, float ssR) {
+	// Derivation:
+	//  mipLevel = floor(log(ssR / MAX_OFFSET));
+	//int mipLevel = clamp((int)floor(log2(ssR)) - LOG_MAX_OFFSET, 0, MAX_MIP_LEVEL);
+	
+	float2 ssP = (float2(ssR * unitOffset) + ssC) / ViewportSize;
+	float depth = NormalDepthMap_RT.SampleLevel(BaseSampler, ssP, 5).w;
+	
+	float2 p = UVtoViewSpace(ssP);
+	return float3(p.x / ProjMatrix._11, p.y / ProjMatrix._22, 1.0f) * depth;
+	return normalize(float3(frustumCorner.x * p.x, frustumCorner.y * p.y, frustumCorner.z)) * depth;
+}
+//--------------------------------------------------------------
+//サンプル位置のAO項を取得する
+// ssC:ScreenSpace座標	C:対象座標	n_C:対象座標の法線	ssDiskRadius:ディスク半径
+// tapIndex:サンプルIndex	randomPatternRotationAngle:ランダム回転角度
+//--------------------------------------------------------------
+float sampleAO(in int2 ssC, in float3 C, in float3 n_C, in float ssDiskRadius, in int tapIndex, in float randomPatternRotationAngle) {
+	// Offset on the unit disk, spun for this pixel
+	float ssR;
+	float2 unitOffset = tapLocation(tapIndex, randomPatternRotationAngle, ssR);
+	ssR *= ssDiskRadius;
+
+	// The occluding point in camera space
+	float3 Q = getOffsetPosition(ssC, unitOffset, ssR);
+
+	float3 v = Q - C;
+
+	float vv = dot(v, v);
+	float vn = dot(v, n_C);
+
+    const float epsilon = 0.01;
+    float f = max(radius2 - vv, 0.0);
+
+	//if (vv < ssR * ssDiskRadius *0.05)
+		return f * f * f * max((vn - bias) / (epsilon + vv), 0.0);
+	return 0;
+}
+//--------------------------------------------------------------
+// ピクセルシェーダ本体
+//--------------------------------------------------------------
+float4 PS_AO(VS_OUTPUT PS_Input) : SV_Target
+{
+	// ScreenSpaceの座標を計算(ピクセル)
+	int2 ssC = PS_Input.Tex * ViewportSize;
+
+	// ViewSpace座標、法線を取得する
+	float3 n_C;
+	float3 C = getPosition(PS_Input.Tex, n_C);
+
+	// HPG12 AlchemyAO論文で使用されたハッシュ関数
+	float randomPatternRotationAngle = (3 * ssC.x ^ ssC.y + ssC.x * ssC.y) * 10;
+
+	// ScreepSpaceでのサンプルディスク半径
+	float ssDiskRadius = -projScale * radius / C.z;
+
+	// AO項を計算
+	float sum = 0.0;
+	for (int i = 0; i < NUM_SAMPLES; ++i) {
+	     sum += sampleAO(ssC, C, n_C, ssDiskRadius, i, randomPatternRotationAngle);
+	}
+
+	float temp = radius2 * radius;
+	sum /= temp * temp;
+	float A = max(0.0, 1.0 - sum * intensity * (5.0 / NUM_SAMPLES));
+
+	if (abs(ddx(C.z)) < 0.02) {
+		A -= ddx(A) * ((ssC.x % 2) - 0.5);
+	}
+	if (abs(ddy(C.z)) < 0.02) {
+		A -= ddy(A) * ((ssC.y % 2) - 0.5);
+	}
+	
+	return float4(A, A, A, 1.0);
+}
+////////////////////////////////////////////////////////////////////
+// ガウスフィルタ
+////////////////////////////////////////////////////////////////////
+float4 PS_Gaussian( VS_OUTPUT PSInput, uniform bool isX, uniform Texture2D Source, uniform int miplevel) : SV_Target
+{
+	//サンプリング幅
+	float2 step, offset;
+	if (isX)
+		step = float2(1.0 / WorkViewportSize.x, 0);
+	else
+		step = float2(0, 1.0 / WorkViewportSize.y);
+	
+	//色
+	float4 Color = weight[0] * Source.SampleLevel(BaseSampler, PSInput.Tex, miplevel);
+	
+	//サンプルする
+    [unroll]
+	for (int i = 1; i < GAUSSIAN_SAMPLE; i++)
+		Color += weight[i] * (Source.SampleLevel(BaseSampler, PSInput.Tex + step * i, miplevel)
+							 + Source.SampleLevel(BaseSampler, PSInput.Tex - step * i, miplevel));
+	
+    return Color;
+}
+////////////////////////////////////////////////////////////////////
+// 合成
+////////////////////////////////////////////////////////////////////
+float4 PS_Blend(VS_OUTPUT PSInput) : SV_Target
+{   
+	float4 Color;
+	
+    // AOのマップ座標に修正
+    float2 offset = 0.5 - 0.5 / VIEWRATE;
+    float2 Tex = PSInput.Tex / VIEWRATE + offset;
+	
+	float ao;
+	//ao = AOMap.Sample(BaseSampler, Tex).r;
+	ao = BlurMapY1.Sample(BaseSampler, Tex).r;
+	ao += BlurMapY2.Sample(BaseSampler, Tex).r;
+	ao += BlurMapY3.Sample(BaseSampler, Tex).r;
+	ao /= 3;
+	
+	float4 toon = ToonColorMap_RT.Sample(BaseSampler, PSInput.Tex);
+	Color = lerp(float4(1,1,1,1), toon * toon * toon, 1- ao);
+	
+	//return Color;
+	//return AOMap.Sample(BaseSampler, PSInput.Tex);
+	return Color * SceneMap.Sample(BaseSampler, PSInput.Tex);
+}
+
+BlendState AO_BlendState
+{
+    BlendEnable[0] = FALSE;	//アルファブレンドOFF
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+technique10 Croquis
+{
+    pass AOPass {
+        SetBlendState(AO_BlendState, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetVertexShader(CompileShader(vs_4_0, VS()));
+        SetPixelShader(CompileShader(ps_4_0, PS_AO()));
+    }
+    pass GaussianXPass1 {
+        SetBlendState(AO_BlendState, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetVertexShader(CompileShader(vs_4_0, VS()));
+        SetPixelShader(CompileShader(ps_4_0, PS_Gaussian(true, AOMap, 0)));
+    }
+    pass GaussianYPass1 {
+        SetBlendState(AO_BlendState, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetVertexShader(CompileShader(vs_4_0, VS()));
+        SetPixelShader(CompileShader(ps_4_0, PS_Gaussian(false, BlurMapX1, 0)));
+    }
+    pass GaussianXPass2 {
+        SetBlendState(AO_BlendState, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetVertexShader(CompileShader(vs_4_0, VS()));
+        SetPixelShader(CompileShader(ps_4_0, PS_Gaussian(true, BlurMapY1, 0)));
+    }
+    pass GaussianYPass2 {
+        SetBlendState(AO_BlendState, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetVertexShader(CompileShader(vs_4_0, VS()));
+        SetPixelShader(CompileShader(ps_4_0, PS_Gaussian(false, BlurMapX2, 0)));
+    }
+    pass GaussianXPass3 {
+        SetBlendState(AO_BlendState, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetVertexShader(CompileShader(vs_4_0, VS()));
+        SetPixelShader(CompileShader(ps_4_0, PS_Gaussian(true, BlurMapY2, 0)));
+    }
+    pass GaussianYPass3 {
+        SetBlendState(AO_BlendState, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetVertexShader(CompileShader(vs_4_0, VS()));
+        SetPixelShader(CompileShader(ps_4_0, PS_Gaussian(false, BlurMapX3, 0)));
+    }
+    pass BlendPass {
+        SetBlendState(AO_BlendState, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+		SetVertexShader(CompileShader(vs_4_0, VS()));
+        SetPixelShader(CompileShader(ps_4_0, PS_Blend()));
+    }
+}
+
+</Code>

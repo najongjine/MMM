@@ -1,0 +1,62 @@
+<Effect/>
+<Type>PixelShader</Type>
+<Name>NormalDepthShader</Name>
+<Author></Author>
+<Version></Version>
+<Description></Description>
+<DrawEdge>False</DrawEdge>
+<DrawSelfShadow>False</DrawSelfShadow>
+<ProjectionMatrix>
+
+	float4x4 projmat;
+	if (S_IsDynamicPerspective)
+	{
+		projmat = S_DynamicFov(S_ProjMatrix, length);
+	}
+	else
+	{
+		projmat = S_ProjMatrix;
+	}
+	return float4x4(projmat[0] / 1.1, projmat[1] / 1.1, projmat[2], projmat[3]);
+
+</ProjectionMatrix>
+<Declare>
+
+#define ALPHACLIP 0.5
+
+// サンプラ(ShaderModel5では共通のサンプラでOK)
+SamplerState BaseSampler;
+// オブジェクトのテクスチャ
+Texture2D ObjectTexture			: MATERIALTEXTURE;
+
+// スクリーンサイズ
+float2 ViewportSize : VIEWPORTPIXELSIZE;
+
+</Declare>
+<VertexColor>
+
+	//法線をビュー座標に変換
+    S_VSInput.Normal = mul(S_VSInput.Normal, GetViewMatrix());
+
+</VertexColor>
+<Code>
+
+	float alpha = 1;
+
+	if (S_useTexture)
+	{
+		// テクスチャ
+		alpha = ObjectTexture.Sample(BaseSampler, S_PSInput.Tex).a;
+	}
+	clip(S_MaterialDiffuse.a * alpha - ALPHACLIP);
+	
+	//そのまま法線と深度を保存
+	float3 normal = normalize(S_PSInput.Normal);
+	float depth = S_PSInput.Position.z;
+	
+	return float4(normal, depth);
+
+</Code>
+<BlendState>
+	BlendEnable[0] = FALSE;
+</BlendState>

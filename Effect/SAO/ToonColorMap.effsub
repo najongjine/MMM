@@ -1,0 +1,17 @@
+<Effect/>
+<Type>PixelShader</Type>
+<Name>ToonColorMap</Name>
+<Description>AOオフスクリーン用</Description>
+<DrawEdge>false</DrawEdge>
+<DrawShadow>false</DrawShadow>
+<Declare>
+
+// サンプラ(ShaderModel5では共通のサンプラでOK)
+SamplerState BaseSampler;
+
+</Declare>
+<Code>
+
+	return S_MaterialToon;
+
+</Code>

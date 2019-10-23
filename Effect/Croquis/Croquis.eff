@@ -1,0 +1,271 @@
+<Effect/>
+<Type>Scene</Type>
+<Name>Croquis</Name>
+<Description>MMMv2 Croquis</Description>
+<CommandDeclare>
+ 
+</CommandDeclare>
+<RenderCommands>
+
+	//元のシーンをScnMapに描画する
+	Context.SetRenderTarget("DepthBuffer", "SceneMap");
+	Context.ClearColor(0, 0, 0, 0);
+	Context.ClearDepth(1.0f);
+	Context.DrawScene();
+
+	//エッジを描画する
+	Context.SetRenderTarget("EdgeDepthBuffer", "EdgeMap");
+	Context.ClearColor(0, 0, 0, 0);
+	Context.ClearDepth(1.0f);
+	Context.DrawPass("DrawEdgePass");
+
+	//Gaussian_Yパス(合成含)をデフォルトのレンダーターゲットに描画する
+	Context.SetRenderTarget("", "");
+	Context.ClearColor(0, 0, 0, 0);
+	Context.ClearDepth(1.0f);
+	Context.DrawPass("BlendPass");
+	
+</RenderCommands>
+<Code>
+
+#define DEPTH_DETECTION		//深度エッジ検出
+//#define COLOR_DETECTION		//カラーエッジ検出
+//#define NORMAL_DETECTION		//法線エッジ検出
+
+//使用するマップの大きさ
+#define MAPRATE 1
+
+//線の色コントロール
+float4 LineColor <
+	string UIName = "線の色";
+	string UIWidget = "Color";
+	bool UIVisible =  true;
+	float4 UIDefault = float4(0, 0, 0, 1);
+> = float4( 0 , 0 , 0 , 1 );
+
+//線の幅を拡大で調整
+float Scale : CONTROLOBJECT < string name = "(self)"; string item = "Si"; >;
+
+//オフセット量
+float2 ViewportSize : VIEWPORTPIXELSIZE;
+static const float2 PS = 1.0 / ViewportSize;
+static const float2 OS = 1.0 / (ViewportSize * MAPRATE);
+
+#ifdef NORMAL_DETECTION
+// 法線マップ
+Texture2D NormalMap_RT : OFFSCREENRENDERTARGET <
+	string Description = "NormalMap";
+	string Format = "R8G8B8A8_UNorm";
+	float2 ViewPortRatio = {MAPRATE,MAPRATE};
+	float4 ClearColor = {0,0,1,0};
+	float ClearDepth = 1.0;
+	bool AntiAlias = false;
+	int Miplevels = 1;
+	string DefaultEffect =
+	    "self=hide;"
+	    "*=DrawNormal.effsub;";
+>;
+#endif
+
+#ifdef DEPTH_DETECTION
+// 深度マップ
+Texture2D DepthMap_RT : OFFSCREENRENDERTARGET <
+	string Description = "DepthMap";
+	string Format = "R16G16_FLOAT";
+	float2 ViewPortRatio = {MAPRATE,MAPRATE};
+	float4 ClearColor = {1,0,1,0};
+	float ClearDepth = 1.0;
+	bool AntiAlias = false;
+	int Miplevels = 1;
+	string DefaultEffect =
+		"self=hide;"
+	    "*=DrawDepth.effsub;";
+>;
+#endif
+
+// エッジ描画用
+Texture2D EdgeMap : RENDERCOLORTARGET <
+	float2 ViewPortRatio = {MAPRATE,MAPRATE};
+	string Format = "B8G8R8A8_UNorm";
+>;
+Texture2D EdgeDepthBuffer : RENDERDEPTHSTENCILTARGET <
+	float2 ViewPortRatio = {MAPRATE,MAPRATE};
+	string Format = "D24_UNorm_S8_UInt";
+>;
+// 元のシーン保存用
+Texture2D SceneMap : RENDERCOLORTARGET <
+	string Format = "B8G8R8A8_UNorm";
+	float2 ViewPortRatio = {1.0,1.0};
+	bool AntiAlias = true;
+>;
+Texture2D DepthBuffer : RENDERDEPTHSTENCILTARGET <
+	float2 ViewPortRatio = {1.0,1.0};
+	string Format = "D24_UNorm_S8_UInt";
+	bool AntiAlias = true;
+>;
+// 汎用サンプルステート
+SamplerState BaseSampler
+{
+    Filter = MIN_MAG_LINEAR_MIP_POINT;
+    AddressU = CLAMP;
+    AddressV = CLAMP;
+};
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// 共通頂点シェーダ
+struct VS_OUTPUT {
+    float4 Pos			: SV_POSITION;
+    float2 Tex			: TEXCOORD0;
+};
+
+VS_OUTPUT VS( float4 Pos : POSITION, float2 Tex : TEXCOORD0 )
+{
+    VS_OUTPUT Out = (VS_OUTPUT)0; 
+	
+    Out.Pos = Pos;
+    Out.Tex = Tex;
+    
+    return Out;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// エッジ作成
+#ifdef DEPTH_DETECTION
+float DepthFromPoint(float2 Tex)
+{
+	float2 val = DepthMap_RT.Sample(BaseSampler, Tex).rg;
+	return val.r + val.g;
+}
+#endif
+#ifdef NORMAL_DETECTION
+float3 NormalFromPoint(float2 Tex)
+{
+	return NormalMap_RT.Sample(BaseSampler, Tex).rgb * 2 - float3(1, 1, 1);
+}
+#endif
+#ifdef COLOR_DETECTION
+float3 ColorFromPoint(float2 Tex)
+{
+	return SceneMap.Sample(BaseSampler, Tex).rgb;
+}
+#endif
+
+// エッジ作成関数(Sobelフィルタ)
+float ddEdge(float2 Tex)
+{
+	float edge = 0;
+	float dd[8];
+	
+#ifdef DEPTH_DETECTION
+	// 深度エッジ検出
+	float  oZ = DepthFromPoint(Tex) / (Scale * 2);
+	dd[0] = DepthFromPoint(Tex + float2(-OS.x, -OS.y));
+	dd[1] = DepthFromPoint(Tex + float2(0    , -OS.y));
+	dd[2] = DepthFromPoint(Tex + float2( OS.x, -OS.y));
+	dd[3] = DepthFromPoint(Tex + float2(-OS.x,     0));
+	dd[4] = DepthFromPoint(Tex + float2( OS.x,     0));
+	dd[5] = DepthFromPoint(Tex + float2(-OS.x,  OS.y));
+	dd[6] = DepthFromPoint(Tex + float2(0    ,  OS.y));
+	dd[7] = DepthFromPoint(Tex + float2( OS.x,  OS.y));
+	
+	float dzx = -dd[0] + dd[2] - 2*dd[3] + 2*dd[4] - dd[5] + dd[7];
+	float dzy = -dd[0] - 2*dd[2] - dd[3] + dd[5] + 2*dd[6] + dd[7];
+	
+	edge += sqrt(dzx * dzx + dzy * dzy) / (oZ * oZ);
+	
+#endif
+
+#ifdef NORMAL_DETECTION
+	//法線エッジ検出(計算量多い割りに結果が残念)
+	float3 oN = NormalFromPoint(Tex);
+	dd[0] = dot(oN, NormalFromPoint(Tex + float2(-OS.x, -OS.y)));
+	dd[1] = dot(oN, NormalFromPoint(Tex + float2(0    , -OS.y)));
+	dd[2] = dot(oN, NormalFromPoint(Tex + float2( OS.x, -OS.y)));
+	dd[3] = dot(oN, NormalFromPoint(Tex + float2(-OS.x,     0)));
+	dd[4] = dot(oN, NormalFromPoint(Tex + float2( OS.x,     0)));
+	dd[5] = dot(oN, NormalFromPoint(Tex + float2(-OS.x,  OS.y)));
+	dd[6] = dot(oN, NormalFromPoint(Tex + float2(0    ,  OS.y)));
+	dd[7] = dot(oN, NormalFromPoint(Tex + float2( OS.x,  OS.y)));
+
+	float dnx = -dd[0] + dd[2] - 2*dd[3] + 2*dd[4] - dd[5] + dd[7];
+	float dny = -dd[0] - 2*dd[2] - dd[3] + dd[5] + 2*dd[6] + dd[7];
+	
+	edge += sqrt(dnx * dnx + dny * dny) / (oN * oN);
+#endif
+	
+#ifdef COLOR_DETECTION
+	//カラーエッジ検出
+	float3 oC = ColorFromPoint(Tex);
+	dd[0] = dot(oC, ColorFromPoint(Tex + float2(-PS.x, -PS.y)));
+	dd[1] = dot(oC, ColorFromPoint(Tex + float2(0    , -PS.y)));
+	dd[2] = dot(oC, ColorFromPoint(Tex + float2( PS.x, -PS.y)));
+	dd[3] = dot(oC, ColorFromPoint(Tex + float2(-PS.x,     0)));
+	dd[4] = dot(oC, ColorFromPoint(Tex + float2( PS.x,     0)));
+	dd[5] = dot(oC, ColorFromPoint(Tex + float2(-PS.x,  PS.y)));
+	dd[6] = dot(oC, ColorFromPoint(Tex + float2(0    ,  PS.y)));
+	dd[7] = dot(oC, ColorFromPoint(Tex + float2( PS.x,  PS.y)));
+	
+	float dcx = -dd[0] + dd[2] - 2*dd[3] + 2*dd[4] - dd[5] + dd[7];
+	float dcy = -dd[0] - 2*dd[2] - dd[3] + dd[5] + 2*dd[6] + dd[7];
+	
+	edge += sqrt(dcx * dcx + dcy * dcy) * (oC * oC) / 2;
+#endif
+	
+	return edge;
+}
+
+float4 PS_DrawEdge(VS_OUTPUT PSInput) : SV_Target
+{
+	return  float4(float3(1, 1, 1) - ddEdge(PSInput.Tex), 1);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// 合成
+float4 PS_Blend(VS_OUTPUT PSInput) : SV_Target
+{
+
+	//少しぼかす
+	float4 edge = 0.25 * EdgeMap.Sample(BaseSampler, PSInput.Tex)
+				+ 0.125 * (EdgeMap.Sample(BaseSampler, PSInput.Tex + float2(0, -OS.y))
+					+ EdgeMap.Sample(BaseSampler, PSInput.Tex + float2(0, OS.y))
+					+ EdgeMap.Sample(BaseSampler, PSInput.Tex + float2(OS.x, 0))
+					+ EdgeMap.Sample(BaseSampler, PSInput.Tex + float2(-OS.x, 0)) )
+				+ 0.0625 * (EdgeMap.Sample(BaseSampler, PSInput.Tex + float2(-OS.x, -OS.y))
+					+ EdgeMap.Sample(BaseSampler, PSInput.Tex + float2(OS.x, OS.y))
+					+ EdgeMap.Sample(BaseSampler, PSInput.Tex + float2(OS.x, -OS.y))
+					+ EdgeMap.Sample(BaseSampler, PSInput.Tex + float2(-OS.x, OS.y)));
+	
+	//return EdgeMap.Sample(BaseSampler, PSInput.Tex);
+	
+	float4 scenecolor = SceneMap.Sample(BaseSampler, PSInput.Tex);
+	return scenecolor * edge + LineColor * (1 - edge);
+}
+
+BlendState Croquis_BlendState
+{
+    BlendEnable[0] = FALSE;	//アルファブレンドOFF
+};
+DepthStencilState Croquis_DepthState
+{
+	DepthWriteMask = 0x00000000;	//深度書き込みOFF
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+technique10 Croquis
+{
+    pass DrawEdgePass {
+        SetBlendState(Croquis_BlendState, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+		SetDepthStencilState(Croquis_DepthState, 0);
+        SetVertexShader(CompileShader(vs_4_1, VS()));
+        SetPixelShader(CompileShader(ps_4_1, PS_DrawEdge()));
+    }
+    pass BlendPass {
+        SetBlendState(Croquis_BlendState, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetDepthStencilState(Croquis_DepthState, 0);
+		SetVertexShader(CompileShader(vs_4_0, VS()));
+        SetPixelShader(CompileShader(ps_4_0, PS_Blend()));
+    }
+}
+
+</Code>
